@@ -20,3 +20,6 @@ dist/
 # Local configuration/OS files
 .DS_Store
 .env
+
+# Claude AI
+.claude
