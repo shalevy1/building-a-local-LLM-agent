@@ -41,9 +41,18 @@ def get_current_datetime():
 def save_history(messages):
     serializable_messages = []
     for m in messages:
-        if hasattr(m, 'model_dump'): serializable_messages.append(m.model_dump())
-        elif isinstance(m, dict): serializable_messages.append(m)
-        else: serializable_messages.append(dict(m))
+        if hasattr(m, 'model_dump'):
+            serializable_messages.append(m.model_dump())
+        elif isinstance(m, dict):
+            m_copy = dict(m)
+            if 'tool_calls' in m_copy and m_copy['tool_calls']:
+                m_copy['tool_calls'] = [
+                    tc.model_dump() if hasattr(tc, 'model_dump') else tc
+                    for tc in m_copy['tool_calls']
+                ]
+            serializable_messages.append(m_copy)
+        else:
+            serializable_messages.append(dict(m))
     with open(current_file, 'w', encoding='utf-8') as f:
         json.dump(serializable_messages, f, indent=4)
 
@@ -77,27 +86,65 @@ tools = [
     },
 ]
 
-def handle_tools(response_message, messages, is_background=False):
+def stream_with_thinking(model, messages, tools=None):
+    """Stream a response, displaying thinking traces and final answer separately."""
+    kwargs = {'model': model, 'messages': messages, 'stream': True}
+    if tools:
+        kwargs['tools'] = tools
+
+    response_stream = ollama.chat(**kwargs)
+
+    full_content = ""
+    full_thinking = ""
+    collected_tool_calls = []
+    is_thinking = False
+    answer_started = False
+
+    print("\nQwen is thinking...")
+
+    for chunk in response_stream:
+        msg = chunk.message
+
+        if hasattr(msg, 'tool_calls') and msg.tool_calls:
+            collected_tool_calls = msg.tool_calls
+
+        if hasattr(msg, 'thinking') and msg.thinking:
+            if not is_thinking:
+                print("\n[THOUGHT PROCESS]:")
+                is_thinking = True
+            print(msg.thinking, end='', flush=True)
+            full_thinking += msg.thinking
+        elif msg.content:
+            if is_thinking and not answer_started:
+                print("\n\n[FINAL ANSWER]:")
+                is_thinking = False
+                answer_started = True
+            print(msg.content, end='', flush=True)
+            full_content += msg.content
+
+    print()
+    return full_content, collected_tool_calls
+
+def handle_tools(tool_calls, messages, is_background=False):
     global active_skill_content
-    tool_calls = response_message.get('tool_calls', [])
     for tool in tool_calls:
-        name = tool['function']['name']
-        args = tool['function'].get('arguments', {})
-        
+        name = tool.function.name
+        args = tool.function.arguments or {}
+
         if name == 'manage_skills':
             if args.get('action') == 'list':
                 res = str(sm.list_skills())
             else:
                 content = sm.load_skill(args.get('skill_name', ''))
-                active_skill_content = content # SYNC TO BACKGROUND
+                active_skill_content = content  # SYNC TO BACKGROUND
                 res = f"SKILL LOADED: {content}\n\nInstruction: Acknowledge and use this persona."
         elif name == 'get_current_datetime':
             res = get_current_datetime()
-        
+
         messages.append({'role': 'tool', 'content': res})
-    
-    final_res = ollama.chat(model=model_name, messages=messages)
-    return final_res['message']
+
+    final_content, _ = stream_with_thinking(model_name, messages)
+    return {'role': 'assistant', 'content': final_content}
 
 def background_loop(prompt, interval_mins):
     print(f"\n[SYSTEM] Loop started: '{prompt}' every {interval_mins} min(s).")
@@ -105,24 +152,23 @@ def background_loop(prompt, interval_mins):
         for _ in range(interval_mins * 60):
             if stop_event.is_set(): return
             time.sleep(1)
-        
+
         print(f"\n\n[LOOP ALERT - {datetime.now().strftime('%H:%M')}]")
-        
+
         # Inject active skill into the loop's context
         loop_messages = []
         if active_skill_content:
             loop_messages.append({'role': 'system', 'content': f"Active Skill Context: {active_skill_content}"})
-        
+
         loop_messages.append({'role': 'user', 'content': prompt})
-        
+
         try:
-            response = ollama.chat(model=model_name, messages=loop_messages, tools=tools)
-            if response['message'].get('tool_calls'):
-                loop_messages.append(response['message'])
-                msg = handle_tools(response['message'], loop_messages, is_background=True)
-            else:
-                msg = response['message']
-            print(f"Response: {msg['content']}\n\nYou: ", end='', flush=True)
+            content, tool_calls = stream_with_thinking(model_name, loop_messages, tools=tools)
+            if tool_calls:
+                loop_messages.append({'role': 'assistant', 'tool_calls': tool_calls})
+                handle_tools(tool_calls, loop_messages, is_background=True)
+
+            print(f"\nYou: ", end='', flush=True)
         except Exception as e: print(f"Loop Error: {e}")
 
 def chat():
@@ -137,7 +183,7 @@ def chat():
         if user_input.startswith('/'):
             parts = user_input.split()
             cmd = parts[0].lower()
-            
+
             if cmd == '/help':
                 print("\n[HELP] Commands:")
                 print(" /skills             - List available .md files")
@@ -149,7 +195,6 @@ def chat():
                 print(" quit                - Exit the application")
 
             elif cmd == '/skills':
-                # Actually print the results here!
                 available = sm.list_skills()
                 print(f"\n[SYSTEM] Available Skills in /skills folder:")
                 if available:
@@ -158,7 +203,6 @@ def chat():
                     print(" - No .md files found.")
 
             elif cmd == '/tools':
-                # Show the tools currently in the 'tools' list
                 print(f"\n[SYSTEM] Active Tools for {model_name}:")
                 for t in tools:
                     print(f" - {t['function']['name']}: {t['function']['description']}")
@@ -192,22 +236,20 @@ def chat():
             elif cmd == '/stop-loop':
                 stop_event.set()
                 print("[SYSTEM] Stopping background loops...")
-            
-            continue # Go back to the top of the while loop
+
+            continue  # Go back to the top of the while loop
 
         if user_input.lower() in ['quit', 'exit', 'bye']: break
         messages.append({'role': 'user', 'content': user_input})
 
         try:
-            response = ollama.chat(model=model_name, messages=messages, tools=tools)
-            if response['message'].get('tool_calls'):
-                messages.append(response['message'])
-                msg = handle_tools(response['message'], messages)
-                print(f"Qwen: {msg['content']}")
+            content, tool_calls = stream_with_thinking(model_name, messages, tools=tools)
+            if tool_calls:
+                messages.append({'role': 'assistant', 'tool_calls': tool_calls})
+                msg = handle_tools(tool_calls, messages)
                 messages.append(msg)
             else:
-                print(f"Qwen: {response['message']['content']}")
-                messages.append(response['message'])
+                messages.append({'role': 'assistant', 'content': content})
             save_history(messages)
         except Exception as e: print(f"Error: {e}")
 

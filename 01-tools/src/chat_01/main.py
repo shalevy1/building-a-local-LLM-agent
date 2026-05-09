@@ -10,9 +10,48 @@ def read_text_file(path):
     except Exception as e:
         return f"Error reading file: {str(e)}"
 
+def stream_with_thinking(model, messages, tools=None):
+    """Stream a response, displaying thinking traces and final answer separately."""
+    kwargs = {'model': model, 'messages': messages, 'stream': True}
+    if tools:
+        kwargs['tools'] = tools
+
+    response_stream = ollama.chat(**kwargs)
+
+    full_content = ""
+    full_thinking = ""
+    collected_tool_calls = []
+    is_thinking = False
+    answer_started = False
+
+    print("\nQwen is thinking...")
+
+    for chunk in response_stream:
+        msg = chunk.message
+
+        if hasattr(msg, 'tool_calls') and msg.tool_calls:
+            collected_tool_calls = msg.tool_calls
+
+        if hasattr(msg, 'thinking') and msg.thinking:
+            if not is_thinking:
+                print("\n[THOUGHT PROCESS]:")
+                is_thinking = True
+            print(msg.thinking, end='', flush=True)
+            full_thinking += msg.thinking
+        elif msg.content:
+            if is_thinking and not answer_started:
+                print("\n\n[FINAL ANSWER]:")
+                is_thinking = False
+                answer_started = True
+            print(msg.content, end='', flush=True)
+            full_content += msg.content
+
+    print()
+    return full_content, collected_tool_calls
+
 def chat():
     print("--- Qwen Tool-Enabled Chat (Type 'quit' to exit) ---")
-    
+
     model_name = 'qwen3.5:9b'
     messages = []
 
@@ -44,28 +83,25 @@ def chat():
         messages.append({'role': 'user', 'content': user_input})
 
         try:
-            response = ollama.chat(model=model_name, messages=messages, tools=tools)
+            content, tool_calls = stream_with_thinking(model_name, messages, tools=tools)
 
-            if response['message'].get('tool_calls'):
-                messages.append(response['message'])
+            if tool_calls:
+                messages.append({'role': 'assistant', 'tool_calls': tool_calls})
 
-                for tool in response['message']['tool_calls']:
-                    func_name = tool['function']['name']
-                    # Correct access pattern for the ollama library
-                    args = tool['function'].get('arguments', {})
-                    
+                for tool in tool_calls:
+                    func_name = tool.function.name
+                    args = tool.function.arguments or {}
+
                     if func_name == 'read_text_file':
                         path = args.get('path')
                         result = read_text_file(path)
                         messages.append({'role': 'tool', 'content': result})
 
                 # Get final response after tool execution
-                final_response = ollama.chat(model=model_name, messages=messages)
-                print(f"Qwen: {final_response['message']['content']}")
-                messages.append(final_response['message'])
+                final_content, _ = stream_with_thinking(model_name, messages)
+                messages.append({'role': 'assistant', 'content': final_content})
             else:
-                print(f"Qwen: {response['message']['content']}")
-                messages.append(response['message'])
+                messages.append({'role': 'assistant', 'content': content})
 
         except Exception as e:
             print(f"An error occurred: {e}")
