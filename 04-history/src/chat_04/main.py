@@ -9,7 +9,7 @@ from datetime import datetime
 model_name = 'qwen3.5:9b'
 stop_event = threading.Event()
 HISTORY_DIR = "history"
-active_skill_content = ""  # This will sync skills to the background loop
+active_skill_content = ""  # Syncs active skill into background loop context
 
 if not os.path.exists(HISTORY_DIR):
     os.makedirs(HISTORY_DIR)
@@ -34,6 +34,8 @@ class SkillManager:
         except: return f"Error: Skill '{skill_name}' not found."
 
 sm = SkillManager()
+
+# --- Utility Functions ---
 
 def get_current_datetime():
     return datetime.now().strftime("%A, %B %d, %Y - %H:%M:%S")
@@ -86,6 +88,8 @@ tools = [
     },
 ]
 
+# --- Logic Core ---
+
 def stream_with_thinking(model, messages, tools=None):
     """Stream a response, displaying thinking traces and final answer separately."""
     kwargs = {'model': model, 'messages': messages, 'stream': True}
@@ -125,7 +129,7 @@ def stream_with_thinking(model, messages, tools=None):
     print()
     return full_content, collected_tool_calls
 
-def handle_tools(tool_calls, messages, is_background=False):
+def handle_tools(tool_calls, messages):
     global active_skill_content
     for tool in tool_calls:
         name = tool.function.name
@@ -135,12 +139,15 @@ def handle_tools(tool_calls, messages, is_background=False):
             if args.get('action') == 'list':
                 res = str(sm.list_skills())
             else:
-                content = sm.load_skill(args.get('skill_name', ''))
-                active_skill_content = content  # SYNC TO BACKGROUND
-                res = f"SKILL LOADED: {content}\n\nInstruction: Acknowledge and use this persona."
+                active_skill_content = sm.load_skill(args.get('skill_name', ''))
+                res = f"SKILL LOADED: {active_skill_content}\n\nInstruction: Use this persona."
         elif name == 'get_current_datetime':
             res = get_current_datetime()
+        else:
+            res = "Unknown tool."
 
+        # Tier 1 Truncation
+        if len(res) > 4000: res = res[:1000] + "\n...[TRUNCATED]..." + res[-1000:]
         messages.append({'role': 'tool', 'content': res})
 
     final_content, _ = stream_with_thinking(model_name, messages)
@@ -155,21 +162,21 @@ def background_loop(prompt, interval_mins):
 
         print(f"\n\n[LOOP ALERT - {datetime.now().strftime('%H:%M')}]")
 
-        # Inject active skill into the loop's context
         loop_messages = []
         if active_skill_content:
-            loop_messages.append({'role': 'system', 'content': f"Active Skill Context: {active_skill_content}"})
-
+            loop_messages.append({'role': 'system', 'content': f"Context: {active_skill_content}"})
         loop_messages.append({'role': 'user', 'content': prompt})
 
         try:
             content, tool_calls = stream_with_thinking(model_name, loop_messages, tools=tools)
             if tool_calls:
                 loop_messages.append({'role': 'assistant', 'tool_calls': tool_calls})
-                handle_tools(tool_calls, loop_messages, is_background=True)
+                handle_tools(tool_calls, loop_messages)
 
             print(f"\nYou: ", end='', flush=True)
         except Exception as e: print(f"Loop Error: {e}")
+
+# --- Main Interface ---
 
 def chat():
     global current_file, active_skill_content

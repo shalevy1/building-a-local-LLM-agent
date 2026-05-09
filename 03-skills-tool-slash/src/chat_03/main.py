@@ -33,7 +33,7 @@ sm = SkillManager()
 def get_current_datetime():
     return datetime.now().strftime("%A, %B %d, %Y - %H:%M:%S")
 
-# --- Tool Definitions (Global) ---
+# --- Tool Definitions ---
 tools = [
     {
         'type': 'function',
@@ -59,6 +59,8 @@ tools = [
         },
     },
 ]
+
+# --- Logic Core ---
 
 def stream_with_thinking(model, messages, tools=None):
     """Stream a response, displaying thinking traces and final answer separately."""
@@ -110,7 +112,7 @@ def handle_tools(tool_calls, messages):
         elif name == 'get_current_datetime':
             res = get_current_datetime()
         else:
-            res = "Tool not found."
+            res = "Unknown tool."
 
         messages.append({'role': 'tool', 'content': res})
 
@@ -139,6 +141,8 @@ def background_loop(prompt, interval_mins):
             print(f"\nYou: ", end='', flush=True)
         except Exception as e:
             print(f"Loop Error: {e}")
+
+# --- Main Interface ---
 
 def chat():
     print("--- Qwen Agent Terminal (Type /help) ---")

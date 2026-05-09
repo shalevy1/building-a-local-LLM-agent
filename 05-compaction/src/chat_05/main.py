@@ -157,6 +157,8 @@ def handle_tools(tool_calls, messages):
                 res = f"SKILL LOADED: {active_skill_content}\n\nInstruction: Use this persona."
         elif name == 'get_current_datetime':
             res = datetime.now().strftime("%A, %B %d, %Y - %H:%M:%S")
+        else:
+            res = "Unknown tool."
 
         # Tier 1 Truncation
         if len(res) > 4000: res = res[:1000] + "\n...[TRUNCATED]..." + res[-1000:]
@@ -234,7 +236,7 @@ def chat():
                 print("[SYSTEM] Loops stopped.")
             continue
 
-        if user_input.lower() in ['quit', 'exit']: break
+        if user_input.lower() in ['quit', 'exit', 'bye']: break
         messages.append({'role': 'user', 'content': user_input})
 
         try:

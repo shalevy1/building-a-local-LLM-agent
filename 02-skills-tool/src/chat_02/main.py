@@ -1,6 +1,5 @@
 import ollama
 import os
-import json
 
 class SkillManager:
     def __init__(self, skills_dir="skills"):
