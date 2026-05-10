@@ -22,6 +22,7 @@ packages = [
     "03-skills-tool-slash/src/chat_03",
     "04-history/src/chat_04",
     "05-compaction/src/chat_05",
+    "06-final/src/chat_06",
 ]
 
 [project.scripts]
@@ -31,3 +32,4 @@ chat-qwen-02    = "chat_02.main:chat"
 chat-qwen-03    = "chat_03.main:chat"
 chat-qwen-04    = "chat_04.main:chat"
 chat-qwen-05    = "chat_05.main:chat"
+chat-qwen-06    = "chat_06.main:chat"
