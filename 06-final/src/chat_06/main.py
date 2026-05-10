@@ -4,6 +4,7 @@
 
 import ollama
 import os
+from typing import Any
 import time
 import threading
 import json
@@ -257,7 +258,7 @@ def compact_history(messages):
 
 def chat():
     global current_file, active_skill_content
-    messages = []
+    messages: list[dict[str, Any]] = []
     print(f"--- Qwen Agent Terminal (Context threshold: {CONTEXT_THRESHOLD} tokens) ---")
     print("Type /help to see available commands.")
 
