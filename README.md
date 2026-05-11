@@ -146,6 +146,30 @@ Additional commands on top of example 04:
 | `/context` | Show current estimated token usage |
 | `/compact` | Manually trigger context compaction |
 
+### 06 — Final: The Complete Agent
+**Directory:** `06-final/`
+
+Consolidates all previous examples into a single agent. Combines streaming thinking display, tool use, skill loading, background loops, session persistence, and automatic context compaction.
+
+```
+cd 06-final
+chat-qwen-06
+```
+
+Full command set:
+
+| Command | Description |
+|---|---|
+| `/help` | List available commands |
+| `/skills` | List available skill files |
+| `/tools` | Show registered tools |
+| `/loop <mins> <prompt>` | Run a prompt in the background on a timer |
+| `/stop-loop` | Stop all background loops |
+| `/history-list` | Show saved sessions |
+| `/history-load <n>` | Load session number `n` from the list |
+| `/context` | Show current estimated token usage |
+| `/compact` | Manually trigger context compaction |
+
 ---
 
 ## Project Structure
@@ -170,10 +194,14 @@ jfj-alternative/
 │   ├── skills/
 │   ├── history/                # saved session JSON files
 │   └── src/chat_04/main.py
-└── 05-compaction/
+├── 05-compaction/
+│   ├── skills/
+│   ├── history/
+│   └── src/chat_05/main.py
+└── 06-final/
     ├── skills/
     ├── history/
-    └── src/chat_05/main.py
+    └── src/chat_06/main.py
 ```
 
 > **Note:** Examples 02–05 use paths relative to your working directory for `skills/` and `history/`. Always run those scripts from inside their subdirectory.
